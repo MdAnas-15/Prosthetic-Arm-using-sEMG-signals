@@ -1,18 +1,30 @@
 """Webcam hand-gesture controller for the PyBullet prosthetic arm."""
 from __future__ import annotations
+
 import time
 
+
 def _gesture_from_landmarks(hand):
-    """Map a MediaPipe normalized hand to one of the project's nine gestures."""
+    """Classify a hand pose using wrist-relative distances (less camera-orientation sensitive)."""
     pts = hand.landmark
-    # Compare fingertip to PIP and MCP so slight bent fingers are not misread.
-    fingers = []
-    for tip, pip, mcp in ((8, 6, 5), (12, 10, 9), (16, 14, 13), (20, 18, 17)):
-        fingers.append(pts[tip].y < pts[pip].y and pts[pip].y < pts[mcp].y + 0.02)
-    # Thumb extension is measured relative to its own MCP and palm width.
-    palm_width = max(0.04, abs(pts[5].x - pts[17].x))
-    thumb_open = abs(pts[4].x - pts[2].x) / palm_width > 0.55
+    wrist = pts[0]
+
+    def distance(a, b):
+        dx = float(pts[a].x) - float(pts[b].x)
+        dy = float(pts[a].y) - float(pts[b].y)
+        return (dx * dx + dy * dy) ** 0.5
+
+    # A finger is extended when its tip is meaningfully farther from the wrist
+    # than its PIP joint. This is more robust than comparing image Y alone.
+    fingers = [
+        distance(tip, 0) > distance(pip, 0) * 1.12
+        for tip, pip in ((8, 6), (12, 10), (16, 14), (20, 18))
+    ]
+
+    palm_width = max(0.025, distance(5, 17))
+    thumb_open = distance(4, 5) > palm_width * 1.05
     count = sum(fingers)
+
     if count >= 4 and thumb_open:
         return "OPEN_HAND"
     if count == 0 and not thumb_open:
@@ -25,18 +37,24 @@ def _gesture_from_landmarks(hand):
         return "WRIST_SUPINATION"
     if fingers == [True, True, True, False]:
         return "WRIST_PRONATION"
-    palm_dx = pts[9].x - pts[0].x
-    palm_dy = pts[9].y - pts[0].y
+
+    # Horizontal palm direction distinguishes radial/ulnar deviation.
+    palm_dx = float(pts[9].x) - float(wrist.x)
+    palm_dy = float(pts[9].y) - float(wrist.y)
     if abs(palm_dx) > abs(palm_dy) * 1.15:
         return "RADIAL_DEVIATION" if palm_dx > 0 else "ULNAR_DEVIATION"
     return "REST"
 
-def run_camera_demo(camera_index=0, stable_seconds=0.55):
+
+def run_camera_demo(camera_index=0, stable_seconds=0.55, movement_gap_seconds=1.5):
     try:
         import cv2
         import mediapipe as mp
     except ImportError as exc:
-        raise RuntimeError("Camera mode requires OpenCV and MediaPipe. Install requirements with the project Python 3.11 environment.") from exc
+        raise RuntimeError(
+            "Camera mode requires OpenCV and MediaPipe. Install requirements "
+            "with the project Python 3.11 environment."
+        ) from exc
 
     from .mapper import GestureMapper
     from .simulator import PyBulletProstheticSimulator
@@ -45,16 +63,29 @@ def run_camera_demo(camera_index=0, stable_seconds=0.55):
     cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW if hasattr(cv2, "CAP_DSHOW") else 0)
     if not cap.isOpened():
         cap.release()
-        raise RuntimeError(f"Could not open webcam {camera_index}. Check camera permissions or try --camera 1.")
+        raise RuntimeError(
+            f"Could not open webcam {camera_index}. Check camera permissions or try --camera 1."
+        )
+
     hands_api = mp.solutions.hands
     mapper = GestureMapper()
-    last_candidate, candidate_since = "REST", time.monotonic()
+    last_candidate = "REST"
+    candidate_since = time.monotonic()
     last_emitted = None
-    print("Camera demo: hold a gesture for about half a second. Return to no hand/REST between gestures. Press Q to quit.")
+    next_command_at = 0.0
+    gap = max(1.5, float(movement_gap_seconds))
+    print(
+        f"Camera demo: hold a pose for {stable_seconds:.2f}s. "
+        f"At least {gap:.1f}s between accepted movements. Press Q to quit."
+    )
+
     try:
-        with hands_api.Hands(max_num_hands=1, min_detection_confidence=0.65,
-                             min_tracking_confidence=0.60) as hands, \
-             PyBulletProstheticSimulator(gui=True) as sim, SimulationLogger() as log:
+        with hands_api.Hands(
+            max_num_hands=1,
+            model_complexity=1,
+            min_detection_confidence=0.70,
+            min_tracking_confidence=0.70,
+        ) as hands, PyBulletProstheticSimulator(gui=True) as sim, SimulationLogger() as log:
             while True:
                 ok, frame = cap.read()
                 if not ok:
@@ -64,7 +95,9 @@ def run_camera_demo(camera_index=0, stable_seconds=0.55):
                 detected = "REST"
                 if result.multi_hand_landmarks:
                     hand = result.multi_hand_landmarks[0]
-                    mp.solutions.drawing_utils.draw_landmarks(frame, hand, hands_api.HAND_CONNECTIONS)
+                    mp.solutions.drawing_utils.draw_landmarks(
+                        frame, hand, hands_api.HAND_CONNECTIONS
+                    )
                     detected = _gesture_from_landmarks(hand)
 
                 now = time.monotonic()
@@ -72,20 +105,43 @@ def run_camera_demo(camera_index=0, stable_seconds=0.55):
                     last_candidate, candidate_since = detected, now
                 stable = now - candidate_since >= stable_seconds
 
-                if stable and detected != last_emitted:
+                if stable and detected == "REST" and last_emitted != "REST":
+                    command = mapper.reset()
+                    command.gesture = "REST"
+                    sim.apply(command)
+                    log.write(command)
+                    last_emitted = "REST"
+                    print("LABEL: REST | arm returned to neutral")
+
+                elif (
+                    stable
+                    and detected != "REST"
+                    and detected != last_emitted
+                    and now >= next_command_at
+                ):
+                    # Camera poses are absolute targets, not cumulative deltas.
+                    # Reset first so wrist/finger poses cannot inherit old joint angles.
+                    mapper.reset()
                     command = mapper.apply(detected, 1.0)
                     sim.apply(command)
                     log.write(command)
                     last_emitted = detected
-                    print(f"LABEL: {detected} | camera gesture accepted")
+                    next_command_at = now + gap
+                    print(
+                        f"LABEL: {detected} | accepted | next movement in at least {gap:.1f}s"
+                    )
 
-                # Advance one physics frame per camera frame; do not freeze webcam
-                # processing for the whole movement dwell period.
                 sim.step(1, realtime=False)
-                cv2.putText(frame, f"Detected: {detected}", (18, 35),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (40, 220, 140), 2)
-                cv2.putText(frame, "Hold pose to register | Return to REST between poses | Q = quit",
-                            (18, 68), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (245, 245, 245), 1)
+                cv2.putText(
+                    frame, f"Detected: {detected}", (18, 35),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (40, 220, 140), 2
+                )
+                remaining = max(0.0, next_command_at - now)
+                cv2.putText(
+                    frame,
+                    f"Hold {stable_seconds:.1f}s | Movement gap {remaining:.1f}s | Q = quit",
+                    (18, 68), cv2.FONT_HERSHEY_SIMPLEX, 0.48, (245, 245, 245), 1
+                )
                 cv2.imshow("Prosthetic Arm - Camera Control", frame)
                 if cv2.waitKey(1) & 0xFF in (ord("q"), 27):
                     break
