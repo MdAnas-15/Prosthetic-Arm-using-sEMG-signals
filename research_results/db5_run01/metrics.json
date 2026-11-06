@@ -1,0 +1,13 @@
+{
+  "train_windows": 45240,
+  "validation_windows": 15251,
+  "test_windows": 30086,
+  "accuracy": 0.8203,
+  "balanced_accuracy": 0.5978,
+  "macro_f1": 0.5933,
+  "coverage_at_threshold": 0.91,
+  "accepted_accuracy": 0.8608,
+  "mean_confidence": 0.8051,
+  "confidence_threshold": 0.7,
+  "note": "Recorded from the user's completed DB5 evaluation run. The trained .pt model is not bundled because it exists on the user's local machine."
+}

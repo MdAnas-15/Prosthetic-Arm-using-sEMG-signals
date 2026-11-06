@@ -1,0 +1,11 @@
+LOCAL ARTIFACTS NOT BUNDLED
+
+This archive contains the complete source code, tests, configuration, and recorded DB5 metrics.
+
+The following files are not available to ChatGPT because they remained only on the user's local computer and therefore cannot truthfully be embedded here:
+
+1. artifacts/cnn_gru_db5.pt - the exact trained PyTorch checkpoint from the user's 39-epoch/early-stopped run.
+2. data/raw/db5/... - the downloaded NinaPro dataset files.
+3. data/processed/db5_9class.npz - the user's processed dataset, unless regenerated locally.
+
+To reproduce the trained system, either copy the existing local checkpoint/data into the documented paths or rerun the preprocessing/training pipeline.

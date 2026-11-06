@@ -1,0 +1,4 @@
+dataset,subjects,channels,sample_rate_hz,gesture_classes,accuracy,balanced_accuracy,macro_f1,notes
+DB5,10,16,200,9,0.8203,0.5978,0.5933,Measured in this project
+DB2,40,12,2000,9,,,,Run the same gesture vocabulary and evaluation protocol before filling
+DB4,10,12,2000,9,,,,Alternative same-protocol NinaPro comparison candidate

@@ -1,0 +1,15 @@
+import argparse, subprocess, sys
+p=argparse.ArgumentParser()
+p.add_argument("--raw",default="data/raw/db5"); p.add_argument("--epochs",type=int,default=45); p.add_argument("--skip-prepare",action="store_true")
+a=p.parse_args()
+def run(*args):
+    print("\n>>", " ".join(args)); subprocess.run([sys.executable,*args],check=True)
+run("scripts/self_test.py")
+if not a.skip_prepare: run("scripts/prepare_db5.py","--raw",a.raw)
+run("scripts/validate_dataset.py")
+run("scripts/train.py","--epochs",str(a.epochs))
+run("scripts/evaluate.py")
+run("scripts/replay_test.py")
+run("scripts/stream_test.py","--raw",a.raw,"--subjects","1")
+print("\n=== sEMG SOFTWARE PHASE COMPLETE ===")
+print("Check artifacts/cnn_gru_db5.pt and the reports/ directory.")
