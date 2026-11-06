@@ -11,31 +11,34 @@ def launch_menu():
     root.geometry("620x470")
     root.minsize(560, 420)
     root.configure(bg="#101827")
-    title = tk.Label(root, text="PROSTHETIC ARM", font=("Segoe UI", 24, "bold"),
-                     fg="#f4f7fb", bg="#101827")
-    title.pack(pady=(28, 4))
+    tk.Label(root, text="PROSTHETIC ARM", font=("Segoe UI", 24, "bold"),
+             fg="#f4f7fb", bg="#101827").pack(pady=(28, 4))
     tk.Label(root, text="Select the demonstration mode", font=("Segoe UI", 11),
              fg="#aebbd0", bg="#101827").pack(pady=(0, 24))
     status = tk.StringVar(value="Ready")
     buttons = []
 
+    def restore():
+        for button in buttons:
+            button.configure(state="normal")
+        status.set("Ready")
+        root.deiconify()
+
     def run_task(label, task):
-        for b in buttons:
-            b.configure(state="disabled")
+        for button in buttons:
+            button.configure(state="disabled")
         status.set(label + " — running")
+        root.withdraw()
         def worker():
             try:
                 task()
             except Exception as exc:
-                root.after(0, lambda: messagebox.showerror("Demo error", str(exc)))
+                error_text = str(exc)
+                root.after(0, lambda error=error_text:
+                           messagebox.showerror("Demo error", error))
             finally:
                 root.after(0, restore)
         threading.Thread(target=worker, daemon=True).start()
-
-    def restore():
-        for b in buttons:
-            b.configure(state="normal")
-        status.set("Ready")
 
     def semg():
         from integration.bridge import run_semg_output
@@ -57,19 +60,20 @@ def launch_menu():
         ("2   CAMERA-BASED SIMULATION", "Move your hand in front of the webcam.", camera),
         ("3   COMBINED sEMG + SIMULATION", "Drive the 3D arm from the trained sEMG model.", combined),
     ]
-    for label, sub, fn in specs:
+    for label, subtitle, callback in specs:
         card = tk.Frame(root, bg="#1d2a3d", padx=18, pady=12)
         card.pack(fill="x", padx=42, pady=7)
-        b = tk.Button(card, text=label, command=fn, font=("Segoe UI", 12, "bold"),
-                      bg="#315b83", fg="white", activebackground="#4279aa",
-                      activeforeground="white", relief="flat", cursor="hand2",
-                      padx=12, pady=9)
-        b.pack(fill="x")
-        buttons.append(b)
-        tk.Label(card, text=sub, font=("Segoe UI", 9), bg="#1d2a3d",
-                 fg="#b8c6d9").pack(pady=(7, 0))
-    tk.Label(root, textvariable=status, font=("Segoe UI", 10), fg="#80c7a5",
-             bg="#101827").pack(pady=14)
+        button = tk.Button(card, text=label, command=callback,
+                           font=("Segoe UI", 12, "bold"), bg="#315b83",
+                           fg="white", activebackground="#4279aa",
+                           activeforeground="white", relief="flat",
+                           cursor="hand2", padx=12, pady=9)
+        button.pack(fill="x")
+        buttons.append(button)
+        tk.Label(card, text=subtitle, font=("Segoe UI", 9),
+                 bg="#1d2a3d", fg="#b8c6d9").pack(pady=(7, 0))
+    tk.Label(root, textvariable=status, font=("Segoe UI", 10),
+             fg="#80c7a5", bg="#101827").pack(pady=14)
     tk.Label(root, text="Research prototype • Press Q in the camera window to stop a demo",
              font=("Segoe UI", 8), fg="#7d8ba0", bg="#101827").pack(side="bottom", pady=12)
     root.mainloop()
