@@ -7,8 +7,8 @@ Run `python main.py` from the repository root to open the three-mode launcher.
 ## Three showcase modes
 
 1. **sEMG signal output** — CNN–GRU predictions, confidence, acceptance and latency on held-out NinaPro DB5 test repetitions. No simulation is opened.
-2. **Camera simulation** — MediaPipe hand tracking drives the PyBullet arm. Hold a pose for about 0.55 seconds; return to REST/no hand before selecting another pose. Press Q in the camera window to exit. Each accepted pose is labelled and logged.
-3. **Combined sEMG + simulation** — held-out test windows are classified, stabilised through temporal voting, and converted into movement transitions. Each transition is applied to the 3D arm, held visibly, labelled in the console and written to CSV.
+2. **Camera simulation** — MediaPipe hand tracking drives the PyBullet arm. Hold a pose for about 0.55 seconds; accepted movements have at least a 1.5-second cooldown. REST returns the virtual hand to neutral. The camera classifier uses wrist-relative landmark distances instead of image-Y-only finger tests. Press Q in the camera window to exit. Each accepted pose is labelled and logged.
+3. **Combined sEMG + simulation** — held-out test windows are classified, stabilised through five-window temporal voting with a confidence threshold of 0.80, and converted into absolute movement transitions. Each pose is held for 1.0 second, then the arm returns to neutral for a minimum 1.5-second gap before the next movement. Events are labelled in the console and written to CSV.
 
 **Honest scope:** the default combined showcase replays recorded held-out sEMG data. It is not live muscle-electrode acquisition. The CLI also supports CSV/serial streaming when a compatible sensor stream is supplied.
 
@@ -65,7 +65,7 @@ The signal and combined modes require:
 
 These are user-generated dataset/model artifacts and are not included in the source-only branch if they were excluded from Git. Check the files exist before the showcase. The README cannot recreate the exact trained checkpoint; copy your known-good local artifacts into those paths.
 
-## Outputs
+**Camera scope:** this webcam mode recognises hand poses from a single hand's 21 MediaPipe landmarks. It does not track the user's shoulder/elbow or reproduce full-body arm kinematics; the 3D arm maps recognised hand poses to prosthetic finger/wrist joint targets. For full anatomical arm tracking, an upper-body pose/hand-position controller would be a separate feature.\n\n## Outputs
 
 - `logs/semg_predictions.csv` — sEMG-only window predictions
 - `logs/semg_simulation_replay.csv` — stable sEMG movement transitions
