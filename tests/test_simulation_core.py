@@ -54,7 +54,7 @@ def test_camera_recognizes_open_and_closed_hand():
         points[tip] = (x, .25)
     points[5] = (.40, .55)
     points[17] = (.60, .55)
-    points[4] = (.30, .60)
+    points[4] = (.15, .55)
     assert _gesture_from_landmarks(_hand(points)) == "OPEN_HAND"
 
     # Closed fist: fingertips remain close to the wrist and thumb is tucked.
