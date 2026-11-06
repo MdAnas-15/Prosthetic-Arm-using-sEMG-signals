@@ -71,8 +71,17 @@ class PyBulletProstheticSimulator:
         self._set("thumb_ip", 0.95*cmd.thumb, 1.5)
 
     def step(self, steps=1, realtime=False):
+        if self.closed or self.client < 0:
+            raise RuntimeError("The PyBullet simulation is already closed.")
         for _ in range(max(0, int(steps))):
-            self.p.stepSimulation(physicsClientId=self.client)
+            if not self.p.isConnected(physicsClientId=self.client):
+                self.close()
+                raise RuntimeError("The PyBullet window was closed or disconnected.")
+            try:
+                self.p.stepSimulation(physicsClientId=self.client)
+            except Exception as exc:
+                self.close()
+                raise RuntimeError("PyBullet stopped during simulation.") from exc
             if realtime:
                 time.sleep(1/240)
 
@@ -85,9 +94,15 @@ class PyBulletProstheticSimulator:
 
     def close(self):
         if not self.closed and self.client >= 0:
-            self.p.disconnect(self.client)
-            self.client = -1
-            self.closed = True
+            try:
+                if self.p.isConnected(physicsClientId=self.client):
+                    self.p.disconnect(physicsClientId=self.client)
+            except Exception:
+                # The user may already have closed the PyBullet GUI window.
+                pass
+            finally:
+                self.client = -1
+                self.closed = True
 
     def __enter__(self):
         return self
