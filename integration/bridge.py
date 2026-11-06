@@ -38,7 +38,7 @@ def run_semg_output(data_path="data/processed/db5_9class.npz",
                              decision.accepted, decision.latency_ms])
             print(f"{i+1:04d}/{n:04d} | predicted={decision.gesture:20s} | "
                   f"confidence={decision.confidence*100:5.1f}% | accepted={decision.accepted}")
-    print(f"Raw window accuracy: {100*correct/n:.2f}% ({correct}/{n})")
+    print(f"Smoothed window accuracy: {100*correct/n:.2f}% ({correct}/{n})")
     print("Prediction log:", log_path)
 
 def replay_processed(data_path, model_path, gui=True, limit=1000, threshold=0.70,
@@ -81,7 +81,7 @@ def replay_processed(data_path, model_path, gui=True, limit=1000, threshold=0.70
             # per-window motor targets into the physics engine.
         if gui:
             sim.step(240, realtime=True)
-    print(f"Raw window accuracy (not movement-event accuracy): {100*raw_correct/n:.2f}% ({n} windows)")
+    print(f"Smoothed window accuracy (not movement-event accuracy): {100*raw_correct/n:.2f}% ({n} windows)")
     print(f"Movement events applied: {events}")
     print("Movement log:", log_path)
 
