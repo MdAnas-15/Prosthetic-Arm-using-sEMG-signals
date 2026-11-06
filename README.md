@@ -1,61 +1,79 @@
 # Prosthetic Arm — sEMG + Camera + 3D Simulation
 
-Run `python main.py` to open the three-mode showcase launcher.
+**Recommended environment: Windows 10/11, CPython 3.11 x64.**
 
-## Showcase modes
+Run `python main.py` from the repository root to open the three-mode launcher.
 
-1. **sEMG signal output** — runs the trained CNN–GRU classifier on the held-out DB5 test repetitions and displays predicted gesture, confidence, acceptance and latency. It does not open PyBullet.
-2. **Camera-based simulation** — uses the webcam and MediaPipe Hands to recognize discrete hand poses and drive the PyBullet arm. Hold a pose briefly to register it; press Q in the camera window to exit.
-3. **Combined sEMG + simulation** — classifies held-out sEMG windows, stabilizes predictions into movement transitions, applies each transition to the arm, holds each pose so it is visible, and writes a labelled CSV event log.
+## Three showcase modes
 
-The sEMG-only and combined modes require `data/processed/db5_9class.npz` and `artifacts/cnn_gru_db5.pt`. The trained artifacts are already tracked in this repository.
+1. **sEMG signal output** — CNN–GRU predictions, confidence, acceptance and latency on held-out NinaPro DB5 test repetitions. No simulation is opened.
+2. **Camera simulation** — MediaPipe hand tracking drives the PyBullet arm. Hold a pose for about 0.55 seconds; return to REST/no hand before selecting another pose. Press Q in the camera window to exit. Each accepted pose is labelled and logged.
+3. **Combined sEMG + simulation** — held-out test windows are classified, stabilised through temporal voting, and converted into movement transitions. Each transition is applied to the 3D arm, held visibly, labelled in the console and written to CSV.
 
-## Windows setup (Python 3.11 recommended)
+**Honest scope:** the default combined showcase replays recorded held-out sEMG data. It is not live muscle-electrode acquisition. The CLI also supports CSV/serial streaming when a compatible sensor stream is supplied.
 
-**Important PyBullet installation note:** the official `pybullet` package on PyPI does not publish a Windows CPython wheel. On Windows, pip therefore builds it from source. The Microsoft Visual C++ 14.x error is a missing build-toolchain issue, not an error in the arm's Python code or URDF. Before installing requirements, install [Visual Studio 2022 Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) and select:
-- Desktop development with C++
-- MSVC v143 x64/x86 build tools
-- Windows 10 or Windows 11 SDK
+## One-time Windows setup
 
-Restart PowerShell after installation, then run:
+Use a clean Python 3.11 x64 environment. Do not reuse a venv created by another Python version.
 
 ```powershell
+# From the repository root:
+deactivate  # only if an old venv is active; ignore if command is not found
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip setuptools wheel
+
+# Install NumPy from a prebuilt wheel, not a local GCC source build:
+python -m pip install --only-binary=:all: numpy==1.26.4
+
+# Install remaining pinned packages:
 python -m pip install -r requirements.txt
+
+# Install the local package and run tests:
 python -m pip install -e .
 python -m pytest -q
+```
+
+If the NumPy wheel command says no matching distribution, check `python --version` and `py -0p`: the active interpreter must be CPython 3.11, 64-bit. Do not try to compile NumPy with the old MinGW/TDM GCC compiler.
+
+If PyBullet installation itself fails, preserve the full pip error. Do not silently substitute another physics engine; install the Windows C++ Build Tools with MSVC v143 and the Windows SDK, then retry `python -m pip install pybullet==3.2.7`.
+
+## Launch
+
+```powershell
 python main.py
 ```
 
-If PowerShell blocks activation, use `.venv\Scripts\python.exe` directly for every command. Install dependencies with that same interpreter:
-```powershell
-.\.venv\Scripts\python.exe -m pip install --upgrade pip setuptools wheel
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-```
-
-Camera mode requires a working webcam and Windows camera permission. If the default camera is unavailable, run `python main.py camera --camera 1`. If MediaPipe cannot be installed in an existing environment, recreate the venv with Python 3.11 rather than mixing Python installations.
-
-## Command-line modes
+Command-line alternatives:
 
 ```powershell
-python main.py demo
 python main.py camera
+python main.py camera --camera 1
 python main.py semg-replay --limit 1000
 python main.py live --csv recordings/user01.csv
 python main.py live --serial COM5 --baud 115200
+python main.py demo
 ```
 
-## Model and evaluation
+Camera mode requires a working webcam and Windows camera permission. Close other apps using the webcam before launching it.
 
-The classifier is a 1D CNN–GRU trained on NinaPro DB5 windows. Repetitions are split into train/validation/test groups; the replay uses held-out test repetitions. A movement-event log is not a new independent test set, and window-level accuracy must not be described as movement accuracy. Existing DB5 evaluation: 82.03% raw accuracy, 59.78% balanced accuracy, 59.33% macro F1, and 86.08% accepted-prediction accuracy at 91% coverage. REST is dominant, so report balanced accuracy and macro F1 alongside raw accuracy.
+## Required trained assets
+
+The signal and combined modes require:
+- `data/processed/db5_9class.npz`
+- `artifacts/cnn_gru_db5.pt`
+
+These are user-generated dataset/model artifacts and are not included in the source-only branch if they were excluded from Git. Check the files exist before the showcase. The README cannot recreate the exact trained checkpoint; copy your known-good local artifacts into those paths.
 
 ## Outputs
 
-- `logs/semg_predictions.csv` — sEMG-only predictions
-- `logs/semg_simulation_replay.csv` — one row per stable movement transition
-- `logs/simulation_*.csv` — camera/scripted simulation movement labels
+- `logs/semg_predictions.csv` — sEMG-only window predictions
+- `logs/semg_simulation_replay.csv` — stable sEMG movement transitions
+- `logs/simulation_*.csv` — camera/scripted movement labels
 - `generated/prosthetic_arm.urdf` — generated robot model
+
+## Report results responsibly
+
+Existing DB5 evaluation: 82.03% raw accuracy, 59.78% balanced accuracy, 59.33% macro F1, and 86.08% accepted-prediction accuracy at 91% coverage. REST is dominant; report balanced accuracy and macro F1 alongside raw accuracy. Simulation replay events are not a new independent evaluation set.
 
 This is a research prototype, not a certified medical device. Webcam gestures are a demonstration controller, not a clinical measurement. Do not connect unvalidated outputs to powered hardware.
