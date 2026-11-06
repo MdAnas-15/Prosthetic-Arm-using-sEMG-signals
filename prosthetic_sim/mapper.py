@@ -7,11 +7,7 @@ GESTURES = [
 ]
 
 class GestureMapper:
-    """Stateful gesture-to-pose mapper.
-
-    REST holds the last safe pose. Hand and wrist commands update only their relevant
-    degrees of freedom so a sequence behaves more like a controller than independent poses.
-    """
+    """Stateful gesture-to-pose mapper. REST always returns to neutral."""
     def __init__(self):
         self.state = ProstheticCommand()
 
@@ -23,11 +19,16 @@ class GestureMapper:
         gesture = gesture.upper()
         if gesture not in GESTURES:
             raise ValueError(f"Unknown gesture: {gesture}")
+        if gesture == "REST":
+            neutral = self.reset()
+            neutral.confidence = confidence
+            return neutral
         s = self.state
         if gesture == "OPEN_HAND":
             s.thumb = s.index = s.middle = s.ring = s.little = 0.0
         elif gesture == "CLOSE_HAND":
-            s.thumb = 0.90; s.index = s.middle = s.ring = s.little = 1.0
+            s.thumb = 0.90
+            s.index = s.middle = s.ring = s.little = 1.0
         elif gesture == "WRIST_SUPINATION":
             s.forearm_roll_deg = 80.0
         elif gesture == "WRIST_PRONATION":
