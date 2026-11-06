@@ -79,7 +79,7 @@ def run_camera_demo(camera_index=0, hold_seconds=0.8, stable_seconds=0.55):
                 if stable and detected != "REST" and detected != last_emitted:
                     command = mapper.apply(detected, 1.0)
                     sim.apply(command)
-                    sim.step(max(1, int(240 * hold_seconds)), realtime=False)
+                    sim.step(max(1, int(240 * hold_seconds)), realtime=True)
                     log.write(command)
                     last_emitted = detected
                     print(f"LABEL: {detected} | camera gesture accepted")
@@ -87,7 +87,7 @@ def run_camera_demo(camera_index=0, hold_seconds=0.8, stable_seconds=0.55):
                     last_emitted = None
                     command = mapper.apply("REST", 1.0)
                     sim.apply(command)
-                    sim.step(12, realtime=False)
+                    sim.step(12, realtime=True)
                 cv2.putText(frame, f"Detected: {detected}", (18, 35),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.8, (40, 220, 140), 2)
                 cv2.putText(frame, "Hold pose to register | Q = quit", (18, 68),
