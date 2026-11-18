@@ -104,9 +104,57 @@ def save_checkpoint(path, model, center, scale, meta):
 
 
 def load_checkpoint(path, device="cpu"):
-    ckpt = torch.load(path, map_location=device, weights_only=False)
-    model = CNNGRU(ckpt["channels"], ckpt["num_classes"])
-    model.load_state_dict(ckpt["model_state"])
+    checkpoint_path = Path(path)
+    if not checkpoint_path.is_file():
+        raise FileNotFoundError(
+            f"Trained sEMG checkpoint not found: {checkpoint_path}. "
+            "Expected artifacts/cnn_gru_db5.pt; restore the trained model before running inference."
+        )
+    try:
+        ckpt = torch.load(checkpoint_path, map_location=device, weights_only=False)
+    except Exception as exc:
+        raise RuntimeError(f"Could not read sEMG checkpoint {checkpoint_path}: {exc}") from exc
+
+    required = {"model_state", "channels", "num_classes", "center", "scale"}
+    missing = sorted(required.difference(ckpt if isinstance(ckpt, dict) else {}))
+    if missing:
+        raise ValueError(f"Invalid sEMG checkpoint; missing fields: {', '.join(missing)}")
+
+    channels = int(ckpt["channels"])
+    num_classes = int(ckpt["num_classes"])
+    if channels <= 0:
+        raise ValueError("Checkpoint channel count must be positive")
+    if num_classes != len(CLASS_NAMES):
+        raise ValueError(
+            f"Checkpoint has {num_classes} output classes; this project expects "
+            f"{len(CLASS_NAMES)} in this order: {', '.join(CLASS_NAMES)}"
+        )
+
+    meta = ckpt.get("meta", {})
+    if not isinstance(meta, dict):
+        raise ValueError("Checkpoint metadata must be a dictionary")
+    saved_classes = meta.get("classes")
+    if saved_classes is not None and list(saved_classes) != CLASS_NAMES:
+        raise ValueError(
+            "Checkpoint class order does not match the current gesture map. "
+            "Retrain or restore the matching model/configuration."
+        )
+
+    center = np.asarray(ckpt["center"], dtype=np.float32)
+    scale = np.asarray(ckpt["scale"], dtype=np.float32)
+    if center.shape != (channels,) or scale.shape != (channels,):
+        raise ValueError(
+            f"Checkpoint normalizer must contain {channels} channel values "
+            f"(center={center.shape}, scale={scale.shape})"
+        )
+    if not np.isfinite(center).all() or not np.isfinite(scale).all() or np.any(scale <= 0):
+        raise ValueError("Checkpoint normalizer contains invalid or non-positive values")
+
+    model = CNNGRU(channels, num_classes)
+    try:
+        model.load_state_dict(ckpt["model_state"])
+    except Exception as exc:
+        raise ValueError(f"Checkpoint weights do not match the CNN-GRU architecture: {exc}") from exc
     model.to(device).eval()
     return model, ckpt
 

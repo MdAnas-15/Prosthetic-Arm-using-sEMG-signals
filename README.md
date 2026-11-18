@@ -1,79 +1,96 @@
 # Prosthetic Arm — sEMG + Camera + 3D Simulation
 
-**Recommended environment: Windows 10/11, CPython 3.11 x64.**
+**Recommended target environment: Windows 10/11, CPython 3.11 x64.**
 
 Run `python main.py` from the repository root to open the three-mode launcher.
 
-## Three showcase modes
+## What the three modes do
 
-1. **sEMG signal output** — CNN–GRU predictions, confidence, acceptance and latency on held-out NinaPro DB5 test repetitions. No simulation is opened.
-2. **Camera simulation** — MediaPipe hand tracking drives the PyBullet arm. Hold a pose for about 0.55 seconds; return to REST/no hand before selecting another pose. Press Q in the camera window to exit. Each accepted pose is labelled and logged.
-3. **Combined sEMG + simulation** — held-out test windows are classified, stabilised through temporal voting, and converted into movement transitions. Each transition is applied to the 3D arm, held visibly, labelled in the console and written to CSV.
+1. **sEMG signal output** — runs the CNN–GRU against held-out NinaPro DB5 windows and prints the predicted gesture, averaged confidence, acceptance and inference latency. It does not open PyBullet.
+2. **Camera simulation** — MediaPipe tracks one hand's 21 landmarks and maps stable hand poses to the PyBullet prosthetic hand/wrist. Hold a pose for about 0.55 seconds. Accepted movements have a minimum 1.5-second cooldown. REST returns the simulated joints to neutral. Press Q or Esc in the camera window to exit.
+3. **Combined sEMG + simulation** — classifies held-out test windows with five-window probability smoothing and a 0.80 confidence threshold. Each accepted pose is labelled in the terminal, held for 1.0 second, then returned to neutral for at least 1.5 seconds before another movement is accepted. A CSV event log is written.
 
-**Honest scope:** the default combined showcase replays recorded held-out sEMG data. It is not live muscle-electrode acquisition. The CLI also supports CSV/serial streaming when a compatible sensor stream is supplied.
+**Important scope distinction:** the combined showcase replays the recorded held-out sEMG dataset. It is not live electrode acquisition. The CLI also supports CSV/serial live streaming when a compatible 16-channel, 200 Hz stream is supplied. The webcam mode classifies hand poses; it does not estimate full shoulder/elbow kinematics or reproduce the user's complete arm trajectory.
 
 ## One-time Windows setup
 
-Use a clean Python 3.11 x64 environment. Do not reuse a venv created by another Python version.
+Use a clean Python 3.11 x64 environment. Do not reuse a virtual environment created by another Python version.
 
 ```powershell
 # From the repository root:
-deactivate  # only if an old venv is active; ignore if command is not found
+deactivate  # only when an old venv is active; ignore if command is not found
 py -3.11 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip setuptools wheel
 
-# Install NumPy from a prebuilt wheel, not a local GCC source build:
+# Install NumPy from a prebuilt wheel:
 python -m pip install --only-binary=:all: numpy==1.26.4
 
-# Install remaining pinned packages:
+# Install the remaining pinned packages:
 python -m pip install -r requirements.txt
 
-# Install the local package and run tests:
+# Install this project and run its test suite:
 python -m pip install -e .
 python -m pytest -q
 ```
 
-If the NumPy wheel command says no matching distribution, check `python --version` and `py -0p`: the active interpreter must be CPython 3.11, 64-bit. Do not try to compile NumPy with the old MinGW/TDM GCC compiler.
+If the NumPy wheel command reports no matching distribution, check `python --version` and `py -0p`: the active interpreter must be CPython 3.11, 64-bit. Do not try to compile NumPy with an old MinGW/TDM GCC compiler.
 
-If PyBullet installation itself fails, preserve the full pip error. Do not silently substitute another physics engine; install the Windows C++ Build Tools with MSVC v143 and the Windows SDK, then retry `python -m pip install pybullet==3.2.7`.
+If PyBullet installation itself fails, preserve the complete pip error. On Windows, install Microsoft C++ Build Tools (MSVC v143) and the Windows SDK, then retry `python -m pip install pybullet==3.2.7`. Do not silently replace the physics engine.
 
-## Launch
+## Launch and verify
+
+Start the mode selector:
 
 ```powershell
 python main.py
 ```
 
-Command-line alternatives:
+Or use the CLI:
 
 ```powershell
+# Verify that the generated 3D arm can execute a scripted gesture sequence:
+python main.py demo
+
+# Camera-tracked hand-pose simulation (Q or Esc exits):
 python main.py camera
-python main.py camera --camera 1
-python main.py semg-replay --limit 1000
+
+# First verify the sEMG classifier without opening a 3D window:
+python main.py semg-replay --limit 100 --headless
+
+# Then watch the 3D arm replay the held-out sEMG movements:
+python main.py semg-replay --limit 100 --hold 1.0
+
+# Full held-out sEMG replay:
+python main.py semg-replay --limit 1000 --hold 1.0
+
+# Live CSV or serial stream (requires a real compatible sensor stream):
 python main.py live --csv recordings/user01.csv
 python main.py live --serial COM5 --baud 115200
-python main.py demo
 ```
 
-Camera mode requires a working webcam and Windows camera permission. Close other apps using the webcam before launching it.
+The expected DB5 input is 16 channels sampled at 200 Hz. CSV input must contain one sample per row; the last 16 numeric columns are used. Serial input must send one comma-separated 16-value sample per line at the configured baud rate and actual 200 Hz sample cadence. A different electrode layout, channel order or sample rate is not compatible merely because it can be read; it requires an explicit adaptation and validation.
 
 ## Required trained assets
 
-The signal and combined modes require:
-- `data/processed/db5_9class.npz`
-- `artifacts/cnn_gru_db5.pt`
+The current showcase branch includes both required artifacts in Git:
 
-These are user-generated dataset/model artifacts and are not included in the source-only branch if they were excluded from Git. Check the files exist before the showcase. The README cannot recreate the exact trained checkpoint; copy your known-good local artifacts into those paths.
+- `data/processed/db5_9class.npz` — processed NinaPro DB5 windows
+- `artifacts/cnn_gru_db5.pt` — trained CNN–GRU checkpoint
 
-## Outputs
+You do not need to download raw DB5 recordings or retrain the model to run the three showcase modes. Raw recordings under `data/raw/db5/` are only required when rebuilding the processed dataset or running the raw-stream comparison script.
 
-- `logs/semg_predictions.csv` — sEMG-only window predictions
-- `logs/semg_simulation_replay.csv` — stable sEMG movement transitions
-- `logs/simulation_*.csv` — camera/scripted movement labels
-- `generated/prosthetic_arm.urdf` — generated robot model
+The checkpoint stores its channel normalizer and model metadata. The inference code validates the checkpoint's class order, channel dimensions, window dimensions and normalizer values before accepting input.
 
-## Report results responsibly
+## Logs and generated files
 
-Existing DB5 evaluation: 82.03% raw accuracy, 59.78% balanced accuracy, 59.33% macro F1, and 86.08% accepted-prediction accuracy at 91% coverage. REST is dominant; report balanced accuracy and macro F1 alongside raw accuracy. Simulation replay events are not a new independent evaluation set.
+- `logs/semg_predictions.csv` — sEMG-only window-level predictions
+- `logs/semg_simulation_replay.csv` — accepted sEMG movement events, subject/repetition, confidence and hold timing
+- `logs/simulation_*.csv` — camera or scripted simulation commands
+- `generated/prosthetic_arm.urdf` — generated PyBullet robot model
+
+## Existing DB5 evaluation
+
+The saved DB5 evaluation reports 82.03% raw accuracy, 59.78% balanced accuracy, 59.33% macro F1, and 86.08% accepted-prediction accuracy at 91% coverage. REST is the dominant class, so raw accuracy alone is not an adequate summary. Re-run the held-out evaluation before quoting these figures as a result from a new model run. Simulation replay events are not an independent evaluation set.
 
 This is a research prototype, not a certified medical device. Webcam gestures are a demonstration controller, not a clinical measurement. Do not connect unvalidated outputs to powered hardware.

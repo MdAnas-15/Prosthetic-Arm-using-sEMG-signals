@@ -13,6 +13,8 @@ def ensure_2d_channels_last(x: np.ndarray) -> np.ndarray:
 
 
 def design_sos(sample_rate: int, highpass_hz: float, lowpass_hz: float, notch_hz: float | None):
+    if sample_rate <= 0:
+        raise ValueError("sample_rate must be positive")
     nyq = sample_rate / 2.0
     lo = highpass_hz / nyq
     hi = min(lowpass_hz, nyq - 1.0) / nyq
@@ -29,6 +31,8 @@ def design_sos(sample_rate: int, highpass_hz: float, lowpass_hz: float, notch_hz
 def filter_emg(x: np.ndarray, sample_rate=200, highpass_hz=10.0, lowpass_hz=95.0,
                notch_hz=50.0, causal=True) -> np.ndarray:
     x = ensure_2d_channels_last(x)
+    if not np.isfinite(x).all():
+        raise ValueError("EMG input contains NaN or infinite values")
     sos = design_sos(sample_rate, highpass_hz, lowpass_hz, notch_hz)
     if causal:
         y = sosfilt(sos, x, axis=0)
@@ -40,18 +44,22 @@ def filter_emg(x: np.ndarray, sample_rate=200, highpass_hz=10.0, lowpass_hz=95.0
 class StreamingEMGFilter:
     def __init__(self, channels: int, sample_rate=200, highpass_hz=10.0,
                  lowpass_hz=95.0, notch_hz=50.0):
-        self.channels = channels
+        if int(channels) <= 0:
+            raise ValueError("channels must be positive")
+        self.channels = int(channels)
         self.sos = design_sos(sample_rate, highpass_hz, lowpass_hz, notch_hz)
-        self.zi = np.zeros((self.sos.shape[0], 2, channels), dtype=np.float64)
+        self.zi = np.zeros((self.sos.shape[0], 2, self.channels), dtype=np.float64)
 
     def reset(self):
         self.zi[...] = 0.0
 
     def push(self, sample: np.ndarray) -> np.ndarray:
-        sample = np.asarray(sample, dtype=np.float64).reshape(1, -1)
-        if sample.shape[1] != self.channels:
-            raise ValueError(f"Expected {self.channels} channels, got {sample.shape[1]}")
-        y, self.zi = sosfilt(self.sos, sample, axis=0, zi=self.zi)
+        sample = np.asarray(sample, dtype=np.float64)
+        if sample.ndim != 1 or sample.size != self.channels:
+            raise ValueError(f"Expected one sample with {self.channels} channels, got {sample.shape}")
+        if not np.isfinite(sample).all():
+            raise ValueError("Raw sEMG sample contains NaN or infinite values")
+        y, self.zi = sosfilt(self.sos, sample.reshape(1, -1), axis=0, zi=self.zi)
         return y[0].astype(np.float32)
 
 

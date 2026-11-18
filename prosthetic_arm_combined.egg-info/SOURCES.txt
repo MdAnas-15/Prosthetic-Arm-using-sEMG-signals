@@ -15,6 +15,7 @@ prosthetic_semg/preprocess.py
 prosthetic_semg/runtime.py
 prosthetic_semg/train_utils.py
 prosthetic_sim/__init__.py
+prosthetic_sim/camera_control.py
 prosthetic_sim/command.py
 prosthetic_sim/demo.py
 prosthetic_sim/logger.py

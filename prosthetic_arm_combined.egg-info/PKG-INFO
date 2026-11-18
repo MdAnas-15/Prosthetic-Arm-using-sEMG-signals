@@ -1,5 +1,5 @@
 Metadata-Version: 2.4
 Name: prosthetic-arm-combined
-Version: 1.0.0
-Summary: CNN-GRU sEMG recognition connected to a PyBullet prosthetic-arm simulation
+Version: 1.1.0
+Summary: CNN-GRU sEMG recognition, webcam hand tracking and PyBullet prosthetic-arm simulation
 Requires-Python: >=3.10
