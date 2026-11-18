@@ -1,6 +1,6 @@
 # Prosthetic Arm — sEMG + Camera + 3D Simulation
 
-**Validated target environment: Windows 10/11, CPython 3.11 x64.**
+**Recommended target environment: Windows 10/11, CPython 3.11 x64.**
 
 Run `python main.py` from the repository root to open the three-mode launcher.
 
