@@ -5,6 +5,7 @@ import threading
 import tkinter as tk
 from tkinter import messagebox
 
+
 def launch_menu():
     root = tk.Tk()
     root.title("Prosthetic Arm | Showcase")
@@ -29,6 +30,7 @@ def launch_menu():
             button.configure(state="disabled")
         status.set(label + " — running")
         root.withdraw()
+
         def worker():
             try:
                 task()
@@ -38,6 +40,7 @@ def launch_menu():
                            messagebox.showerror("Demo error", error))
             finally:
                 root.after(0, restore)
+
         threading.Thread(target=worker, daemon=True).start()
 
     def semg():
@@ -50,15 +53,24 @@ def launch_menu():
 
     def combined():
         from integration.bridge import replay_processed
-        run_task("Combined sEMG + simulation",
-                 lambda: replay_processed("data/processed/db5_9class.npz",
-                                          "artifacts/cnn_gru_db5.pt",
-                                          gui=True, limit=1000, command_hold=0.8))
+        run_task(
+            "Combined sEMG + simulation",
+            lambda: replay_processed(
+                "data/processed/db5_9class.npz",
+                "artifacts/cnn_gru_db5.pt",
+                gui=True,
+                limit=1000,
+                threshold=0.80,
+                command_hold=1.0,
+                inter_movement_gap=1.5,
+                stable_votes=5,
+            ),
+        )
 
     specs = [
         ("1   sEMG SIGNAL OUTPUT", "Predictions and confidence only — no 3D arm.", semg),
         ("2   CAMERA-BASED SIMULATION", "Move your hand in front of the webcam.", camera),
-        ("3   COMBINED sEMG + SIMULATION", "Drive the 3D arm from the trained sEMG model.", combined),
+        ("3   COMBINED sEMG + SIMULATION", "Drive the 3D arm from held-out sEMG windows.", combined),
     ]
     for label, subtitle, callback in specs:
         card = tk.Frame(root, bg="#1d2a3d", padx=18, pady=12)
@@ -78,6 +90,7 @@ def launch_menu():
              font=("Segoe UI", 8), fg="#7d8ba0", bg="#101827").pack(side="bottom", pady=12)
     root.mainloop()
 
+
 def main():
     parser = argparse.ArgumentParser(description="Prosthetic arm demonstration")
     sub = parser.add_subparsers(dest="mode")
@@ -88,9 +101,9 @@ def main():
     r.add_argument("--data", default="data/processed/db5_9class.npz")
     r.add_argument("--model", default="artifacts/cnn_gru_db5.pt")
     r.add_argument("--limit", type=int, default=1000)
-    r.add_argument("--threshold", type=float, default=0.70)
+    r.add_argument("--threshold", type=float, default=0.80)
     r.add_argument("--headless", action="store_true")
-    r.add_argument("--hold", type=float, default=0.8)
+    r.add_argument("--hold", type=float, default=1.0)
     l = sub.add_parser("live", help="Use a CSV or serial sEMG stream")
     l.add_argument("--model", default="artifacts/cnn_gru_db5.pt")
     l.add_argument("--csv")
@@ -108,8 +121,10 @@ def main():
         run_demo(gui=not args.headless, hold_seconds=args.hold)
     elif args.mode == "semg-replay":
         from integration.bridge import replay_processed
-        replay_processed(args.data, args.model, gui=not args.headless, limit=args.limit,
-                         threshold=args.threshold, command_hold=args.hold)
+        replay_processed(
+            args.data, args.model, gui=not args.headless, limit=args.limit,
+            threshold=args.threshold, command_hold=args.hold,
+        )
     elif args.mode == "live":
         from integration.bridge import live_stream
         live_stream(args.model, gui=not args.headless, csv_path=args.csv,
@@ -117,6 +132,7 @@ def main():
     elif args.mode == "camera":
         from prosthetic_sim.camera_control import run_camera_demo
         run_camera_demo(camera_index=args.camera)
+
 
 if __name__ == "__main__":
     main()

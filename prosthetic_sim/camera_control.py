@@ -1,29 +1,35 @@
-"""Webcam hand-gesture controller for the PyBullet prosthetic arm."""
+"""Webcam hand-pose controller for the PyBullet prosthetic arm."""
 from __future__ import annotations
 
 import time
 
 
 def _gesture_from_landmarks(hand):
-    """Classify a hand pose using wrist-relative distances (less camera-orientation sensitive)."""
+    """Classify a hand pose using wrist-relative geometry from MediaPipe landmarks."""
     pts = hand.landmark
-    wrist = pts[0]
 
     def distance(a, b):
         dx = float(pts[a].x) - float(pts[b].x)
         dy = float(pts[a].y) - float(pts[b].y)
         return (dx * dx + dy * dy) ** 0.5
 
-    # A finger is extended when its tip is meaningfully farther from the wrist
-    # than its PIP joint. This is more robust than comparing image Y alone.
+    # Landmark indices: wrist=0; PIP joints=6,10,14,18; fingertips=8,12,16,20.
+    # Wrist-relative distances are less sensitive to the hand's position in the frame.
     fingers = [
         distance(tip, 0) > distance(pip, 0) * 1.12
         for tip, pip in ((8, 6), (12, 10), (16, 14), (20, 18))
     ]
-
-    palm_width = max(0.025, distance(5, 17))
-    thumb_open = distance(4, 5) > palm_width * 1.05
     count = sum(fingers)
+
+    palm_width = max(1e-4, distance(5, 17))
+    thumb_open = distance(4, 5) > palm_width * 0.65
+
+    # A mostly horizontal palm with the fingers extended is mapped to deviation.
+    # This is a 2-D webcam pose mapping, not direct measurement of wrist torque.
+    palm_dx = float(pts[9].x) - float(pts[0].x)
+    palm_dy = float(pts[9].y) - float(pts[0].y)
+    if count >= 3 and abs(palm_dx) > abs(palm_dy) * 1.25:
+        return "RADIAL_DEVIATION" if palm_dx > 0 else "ULNAR_DEVIATION"
 
     if count >= 4 and thumb_open:
         return "OPEN_HAND"
@@ -35,14 +41,8 @@ def _gesture_from_landmarks(hand):
         return "WRIST_EXTENSION"
     if thumb_open and count == 0:
         return "WRIST_SUPINATION"
-    if fingers == [True, True, True, False]:
+    if count == 3:
         return "WRIST_PRONATION"
-
-    # Horizontal palm direction distinguishes radial/ulnar deviation.
-    palm_dx = float(pts[9].x) - float(wrist.x)
-    palm_dy = float(pts[9].y) - float(wrist.y)
-    if abs(palm_dx) > abs(palm_dy) * 1.15:
-        return "RADIAL_DEVIATION" if palm_dx > 0 else "ULNAR_DEVIATION"
     return "REST"
 
 
@@ -60,7 +60,9 @@ def run_camera_demo(camera_index=0, stable_seconds=0.55, movement_gap_seconds=1.
     from .simulator import PyBulletProstheticSimulator
     from .logger import SimulationLogger
 
-    cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW if hasattr(cv2, "CAP_DSHOW") else 0)
+    cap = cv2.VideoCapture(
+        camera_index, cv2.CAP_DSHOW if hasattr(cv2, "CAP_DSHOW") else 0
+    )
     if not cap.isOpened():
         cap.release()
         raise RuntimeError(
@@ -73,7 +75,9 @@ def run_camera_demo(camera_index=0, stable_seconds=0.55, movement_gap_seconds=1.
     candidate_since = time.monotonic()
     last_emitted = None
     next_command_at = 0.0
+    last_sim_time = time.monotonic()
     gap = max(1.5, float(movement_gap_seconds))
+    stable_seconds = max(0.1, float(stable_seconds))
     print(
         f"Camera demo: hold a pose for {stable_seconds:.2f}s. "
         f"At least {gap:.1f}s between accepted movements. Press Q to quit."
@@ -119,8 +123,7 @@ def run_camera_demo(camera_index=0, stable_seconds=0.55, movement_gap_seconds=1.
                     and detected != last_emitted
                     and now >= next_command_at
                 ):
-                    # Camera poses are absolute targets, not cumulative deltas.
-                    # Reset first so wrist/finger poses cannot inherit old joint angles.
+                    # Each camera pose is an absolute target, not a cumulative delta.
                     mapper.reset()
                     command = mapper.apply(detected, 1.0)
                     sim.apply(command)
@@ -131,7 +134,13 @@ def run_camera_demo(camera_index=0, stable_seconds=0.55, movement_gap_seconds=1.
                         f"LABEL: {detected} | accepted | next movement in at least {gap:.1f}s"
                     )
 
-                sim.step(1, realtime=False)
+                # Advance the physics clock by elapsed wall time. One physics step
+                # per webcam frame made the simulation run far below real-time.
+                elapsed = max(0.0, now - last_sim_time)
+                physics_steps = max(1, min(60, int(round(elapsed * 240.0))))
+                sim.step(physics_steps, realtime=False)
+                last_sim_time = now
+
                 cv2.putText(
                     frame, f"Detected: {detected}", (18, 35),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (40, 220, 140), 2
